@@ -55,7 +55,3 @@ nc 127.0.0.1 54001
 ### Para salir
 
 Escribe `END` en la consola del cliente o presiona `Ctrl + C` para cerrar la conexión.
-
-```
-
-```
