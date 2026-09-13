@@ -1,6 +1,6 @@
 # Laboratorio 02 - Intermediary Chat Server and Client
 
-Este proyecto implementa una arquitectura de chat intermediario multihilo y un protocolo de capa de aplicación basado en sockets TCP en C++. Permite comunicación uno a uno (Unicast), difusión a todos los clientes (Broadcast) y gestión de sesiones mediante nicknames únicos[cite: 1].
+Este proyecto implementa una arquitectura de chat intermediario multihilo y un protocolo de capa de aplicación basado en sockets TCP en C++. Permite comunicación uno a uno (Unicast), difusión a todos los clientes (Broadcast) y gestión de sesiones mediante nicknames únicos.
 
 ## 1. Compilación
 
