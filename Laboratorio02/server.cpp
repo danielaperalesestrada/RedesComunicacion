@@ -1,100 +1,144 @@
-#include <iostream>
-#include <vector>
-#include <thread>
-#include <mutex>
-#include <algorithm>
-#include <cstring>
-#include <unistd.h>
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
+#include <arpa/inet.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
 
-std::vector<int> clients;
-std::mutex clients_mutex;
+#include <iostream>
+#include <map>
+#include <string>
+#include <thread>
+#include <mutex>
 
-void broadcast_message(const std::string& message, int sender_fd) {
-    std::lock_guard<std::mutex> lock(clients_mutex);
-    for (int client_fd : clients) {
-        // Broadcast a todos los demás clientes
-        if (client_fd != sender_fd) {
-            write(client_fd, message.c_str(), message.length());
-        }
-    }
+using namespace std;
+
+map<string, int> ListOfCli;
+mutex map_mutex;
+
+string zeroPad(int number, int size) {
+    string str = to_string(number);
+    if (str.length() >= (size_t)size) return str;
+    return string(size - str.length(), '0') + str;
 }
 
-void handle_client(int client_fd) {
-    char buffer[256];
-    while (true) {
-        memset(buffer, 0, sizeof(buffer));
-        int bytes_read = read(client_fd, buffer, sizeof(buffer) - 1);
+void ThreadReadClient(int S) {
+    string nickname;
+    char buff[1000];
+    int n, tamano;
 
-        if (bytes_read <= 0 || strcmp(buffer, "END\n") == 0 || strcmp(buffer, "END") == 0) {
-            std::cout << "Cliente desconectado (FD: " << client_fd << ").\n";
+    read(S, buff, 1);
+    while (buff[0] != 'N') {
+        read(S, buff, 1);
+    }
+    n = read(S, buff, 7);
+    buff[n] = '\0';
+    tamano = atoi(buff);
+    n = read(S, buff, tamano);
+    buff[n] = '\0';
+    nickname = buff;
+
+    {
+        lock_guard<mutex> lock(map_mutex);
+        ListOfCli[nickname] = S;
+    }
+    cout << "Cliente registrado: " << nickname << " (FD: " << S << ")\n";
+
+    for (;;) {
+        n = read(S, buff, 1);
+        if (n <= 0) break;
+
+        char action = buff[0];
+
+        if (action == 'M') { // Mensaje Unicast
+            n = read(S, buff, 7);
+            buff[n] = '\0';
+            tamano = atoi(buff);
+            n = read(S, buff, tamano);
+            buff[n] = '\0';
+            string destination = buff;
+
+            n = read(S, buff, 11);
+            buff[n] = '\0';
+            tamano = atoi(buff);
+            n = read(S, buff, tamano);
+            buff[n] = '\0';
+            string msg = buff;
+
+            string payload = "m" + zeroPad(nickname.size(), 7) + nickname + zeroPad(msg.size(), 11) + msg;
+
+            lock_guard<mutex> lock(map_mutex);
+            if (ListOfCli.count(destination)) {
+                write(ListOfCli[destination], payload.c_str(), payload.size());
+            }
+        }
+        else if (action == 'B') { // Mensaje Broadcast
+            n = read(S, buff, 11);
+            buff[n] = '\0';
+            tamano = atoi(buff);
+            n = read(S, buff, tamano);
+            buff[n] = '\0';
+            string msg = buff;
+
+            string payload = "b" + zeroPad(nickname.size(), 7) + nickname + zeroPad(msg.size(), 11) + msg;
+
+            lock_guard<mutex> lock(map_mutex);
+            for (auto const& [nick, socket_fd] : ListOfCli) {
+                if (socket_fd != S) { // No autoreenviar al emisor
+                    write(socket_fd, payload.c_str(), payload.size());
+                }
+            }
+        }
+        else if (action == 'Q') { // Desconexión
             break;
         }
-
-        buffer[bytes_read] = '\0';
-        std::cout << "[FD " << client_fd << "]: " << buffer;
-
-        // Reenviar mensaje a los demás clientes
-        broadcast_message(std::string(buffer), client_fd);
     }
 
-    // Remover cliente de la lista al desconectarse
     {
-        std::lock_guard<std::mutex> lock(clients_mutex);
-        clients.erase(std::remove(clients.begin(), clients.end(), client_fd), clients.end());
+        lock_guard<mutex> lock(map_mutex);
+        ListOfCli.erase(nickname);
     }
-    close(client_fd);
+    cout << "Cliente desconectado: " << nickname << "\n";
+    close(S);
 }
 
 int main(int argc, char* argv[]) {
-    if (argc != 2) {
-        std::cout << "Uso: " << argv[0] << " <puerto>\n";
-        return 1;
-    }
+    int port = (argc >= 2) ? atoi(argv[1]) : 45000;
 
-    int server_fd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-    if (server_fd == -1) {
+    int ServerSocket = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP);
+    if (ServerSocket == -1) {
         perror("Error creando el socket");
-        return 1;
+        exit(EXIT_FAILURE);
     }
 
-    sockaddr_in stSockAddr;
+    struct sockaddr_in stSockAddr;
     memset(&stSockAddr, 0, sizeof(stSockAddr));
     stSockAddr.sin_family = AF_INET;
-    stSockAddr.sin_port = htons(std::stoi(argv[1]));
+    stSockAddr.sin_port = htons(port);
     stSockAddr.sin_addr.s_addr = INADDR_ANY;
 
-    if (bind(server_fd, (struct sockaddr*)&stSockAddr, sizeof(stSockAddr)) == -1) {
-        perror("Bind falló");
-        close(server_fd);
-        return 1;
+    if (bind(ServerSocket, (const struct sockaddr *)&stSockAddr, sizeof(stSockAddr)) == -1) {
+        perror("Error bind failed");
+        close(ServerSocket);
+        exit(EXIT_FAILURE);
     }
 
-    if (listen(server_fd, 10) == -1) {
-        perror("Listen falló");
-        close(server_fd);
-        return 1;
+    if (listen(ServerSocket, 10) == -1) {
+        perror("Error listen failed");
+        close(ServerSocket);
+        exit(EXIT_FAILURE);
     }
 
-    std::cout << "Servidor escuchando en el puerto " << argv[1] << "...\n";
+    cout << "Servidor escuchando en puerto " << port << "...\n";
 
-    while (true) {
-        int client_fd = accept(server_fd, NULL, NULL);
-        if (client_fd < 0) continue;
-
-        {
-            std::lock_guard<std::mutex> lock(clients_mutex);
-            clients.push_back(client_fd);
-        }
-
-        std::cout << "Nuevo cliente conectado (FD: " << client_fd << ").\n";
-        
-        // Se lanza un hilo por cada cliente conectado
-        std::thread(handle_client, client_fd).detach();
+    for (;;) {
+        int ClientSocket = accept(ServerSocket, NULL, NULL);
+        if (ClientSocket < 0) continue;
+        thread(ThreadReadClient, ClientSocket).detach();
     }
 
-    close(server_fd);
+    close(ServerSocket);
     return 0;
 }
