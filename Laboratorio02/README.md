@@ -1,10 +1,10 @@
-# Laboratorio 02 - Multi-clients Broadcast
+# Laboratorio 02 - Intermediary Chat Server and Client
 
-Este proyecto implementa un servidor C++ que admite múltiples clientes conectados simultáneamente y distribuye los mensajes en modo *broadcast* utilizando sockets e hilos (`std::thread`).
+Este proyecto implementa una arquitectura de chat intermediario multihilo y un protocolo de capa de aplicación basado en sockets TCP en C++. Permite comunicación uno a uno (Unicast), difusión a todos los clientes (Broadcast) y gestión de sesiones mediante nicknames únicos[cite: 1].
 
-## 1. Compilar
+## 1. Compilación
 
-Desde la carpeta del proyecto, compilar utilizando `g++` e incluyendo la bandera `-pthread` para el soporte de hilos:
+Desde la carpeta raíz del proyecto, compila ambos archivos usando `g++` con soporte para hilos (`-pthread`):
 
 ```bash
 g++ -Wall -Wextra -std=c++11 server.cpp -o server -pthread
@@ -12,46 +12,74 @@ g++ -Wall -Wextra -std=c++11 client.cpp -o client -pthread
 
 ```
 
-## 2. Ejecutar el servidor
+## 2. Ejecutar el Servidor
 
-**Terminal 1 (Servidor):**
+Inicia el servidor especificando el puerto opcionalmente (si no se proporciona, usará por defecto el puerto `45000`):
 
 ```bash
-./server 54001
+# Ejecución con puerto por defecto (45000)
+./server
+
+# O especificando un puerto personalizado
+./server 45000
 
 ```
 
-## 3. Ejecutar múltiples clientes
+## 3. Ejecutar los Clientes
 
-Puedes abrir varias terminales para simular diferentes clientes conectados al servidor:
-
-**Terminal 2 (Cliente 1):**
+Abre múltiples terminales para conectar diferentes usuarios al servidor:
 
 ```bash
-./client 127.0.0.1 54001
+# Sintaxis: ./client <IP> <puerto>
+./client 127.0.0.1 45000
 
 ```
 
-**Terminal 3 (Cliente 2):**
+Al iniciar, el programa te solicitará un **Nickname** único para registrarte en el servidor antes de ingresar a la consola de comandos.
 
-```bash
-./client 127.0.0.1 54001
+## 4. Comandos de la Aplicación
 
-```
+Dentro de la interfaz del cliente puedes enviar las siguientes tramas:
 
-Todo mensaje enviado desde un cliente será retransmitido (*broadcast*) a los demás clientes conectados.
-
-## 4. Probar con `nc` (Netcat)
-
-### Usar `nc` como cliente adicional
-
-Puedes conectar una instancia de Netcat para verificar el reenvío de mensajes:
-
-```bash
-nc 127.0.0.1 54001
+* **Enviar mensaje privado (Unicast):**
+```text
+M <Nickname_Destino> <Mensaje>
 
 ```
 
-### Para salir
 
-Escribe `END` en la consola del cliente o presiona `Ctrl + C` para cerrar la conexión.
+* **Enviar mensaje a todos (Broadcast):**
+```text
+B <Mensaje>
+
+```
+
+
+* **Desconectarse (Logout):**
+```text
+Q
+
+```
+
+
+
+## 5. Especificación del Protocolo de Aplicación
+
+El protocolo utiliza *Action Bytes* y encabezados de tamaño fijo en texto:
+
+* **Registro ('N'):** `'N'` + 7 bytes (longitud nick) + Nickname.
+
+
+* **Unicast ('M' / 'm'):** `'M'` + 7 bytes (longitud nick destino) + Nickname destino + 11 bytes (longitud mensaje) + Mensaje.
+
+
+* **Broadcast ('B' / 'b'):** `'B'` + 11 bytes (longitud mensaje) + Mensaje.
+
+
+* **Logout ('Q'):** `'Q'`.
+
+
+
+```
+
+```
