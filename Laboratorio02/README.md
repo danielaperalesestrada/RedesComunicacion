@@ -77,5 +77,3 @@ El protocolo utiliza *Action Bytes* y encabezados de tamaño fijo en texto:
 
 
 * **Logout ('Q'):** `'Q'`.
-
-```
